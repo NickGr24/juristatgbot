@@ -9,9 +9,12 @@ from aiogram.client.default import DefaultBotProperties
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from datetime import datetime
 from database import register_user, update_user_time
+import os
 
 # Token-ul botului
-TOKEN = "7863600964:AAGEG4Sdhj7ESatcTIFgxwvqujRvJC2Ydvw"
+TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+if not TOKEN:
+    raise RuntimeError("TELEGRAM_BOT_TOKEN environment variable not set!")
 
 # Creăm botul
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
@@ -39,11 +42,15 @@ main_keyboard = ReplyKeyboardMarkup(
 @dp.message(Command("start"))
 async def start(message: types.Message):
     """Înregistrează utilizatorul și afișează mesajul de bun venit"""
+    if not message.from_user:
+        await message.answer("Eroare: utilizator necunoscut.")
+        return
     user_id = message.from_user.id
     register_user(user_id, "09:00")  # Ora implicită 09:00
 
+    full_name = message.from_user.full_name if message.from_user.full_name else "utilizator"
     await message.answer(
-    f"👋 Salut, {message.from_user.full_name}!\n\n"
+    f"👋 Salut, {full_name}!\n\n"
     "📌 <b>Noțiuni Juridice | Academia „Ștefan cel Mare”</b>\n\n"
     "🔹 <b>Ce face acest bot?</b>\n"
     "Acest bot educațional îți oferă definiții zilnice ale termenilor juridici pentru a-ți îmbunătăți cunoștințele în domeniul dreptului. 📚\n\n"
@@ -64,16 +71,26 @@ async def start(message: types.Message):
 @dp.message(lambda message: message.text == "🕒 Setează ora de primire a termenilor")
 async def set_time_button(message: types.Message):
     """Când utilizatorul apasă butonul pentru a seta ora"""
+    if not message.from_user:
+        await message.answer("Eroare: utilizator necunoscut.")
+        return
     user_id = message.from_user.id
     await message.answer("📅 Introdu ora în format HH:MM (ex: 14:30).")
 
 @dp.message(lambda message: re.match(r"^([0-9]{1,2}):([0-9]{2})$", message.text))
 async def save_time(message: types.Message):
     """Salvează ora introdusă de utilizator"""
+    if not message.from_user:
+        await message.answer("Eroare: utilizator necunoscut.")
+        return
     user_id = message.from_user.id
-    time_text = message.text.strip()
+    time_text = message.text.strip() if message.text else ""
 
-    hour, minute = map(int, time_text.split(":"))
+    try:
+        hour, minute = map(int, time_text.split(":"))
+    except Exception:
+        await message.answer("⚠️ Format oră invalid.")
+        return
     if hour > 23 or minute > 59:
         await message.answer("⚠️ Ora introdusă este incorectă. Orele trebuie să fie între 00-23, iar minutele între 00-59.")
         return
@@ -89,6 +106,9 @@ async def save_time(message: types.Message):
 @dp.message(lambda message: message.text == "📖 Primește un cuvânt")
 async def receive_word(message: types.Message):
     """Trimite imediat un termen juridic utilizatorului"""
+    if not message.from_user:
+        await message.answer("Eroare: utilizator necunoscut.")
+        return
     user_id = message.from_user.id
     await send_daily_term(user_id)
 
@@ -140,8 +160,11 @@ def reschedule_jobs():
 @dp.callback_query(lambda c: c.data.startswith("add_"))
 async def add_to_my_words(callback: types.CallbackQuery):
     """Adaugă un termen în lista utilizatorului"""
+    if not callback.from_user:
+        await callback.answer("Eroare: utilizator necunoscut.", show_alert=True)
+        return
     user_id = callback.from_user.id
-    word_id = int(callback.data.split("_")[1])
+    word_id = int(callback.data.split("_")[1]) if callback.data else 0
 
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -169,8 +192,11 @@ async def add_to_my_words(callback: types.CallbackQuery):
 @dp.callback_query(lambda c: c.data.startswith("del_"))
 async def delete_from_my_words(callback: types.CallbackQuery):
     """Elimină un termen din lista utilizatorului"""
+    if not callback.from_user:
+        await callback.answer("Eroare: utilizator necunoscut.", show_alert=True)
+        return
     user_id = callback.from_user.id
-    word_id = int(callback.data.split("_")[1])
+    word_id = int(callback.data.split("_")[1]) if callback.data else 0
 
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -184,6 +210,9 @@ async def delete_from_my_words(callback: types.CallbackQuery):
 @dp.message(lambda message: message.text == "📚 Lista mea de noțiuni")
 async def show_my_words(message: types.Message):
     """Afișează lista de cuvinte salvate"""
+    if not message.from_user:
+        await message.answer("Eroare: utilizator necunoscut.")
+        return
     user_id = message.from_user.id
 
     conn = sqlite3.connect(DB_PATH)
